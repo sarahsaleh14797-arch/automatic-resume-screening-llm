@@ -6,20 +6,31 @@ from src.ui.config import APP_NAME, TAGLINE, LOGO_PATH, OLLAMA_BASE_URL, OLLAMA_
 from src.llm.llm_client import generate_response
 st.set_page_config(page_title=APP_NAME, layout="wide")
 apply_theme()
+col1, col2 = st.columns([1.5, 5], vertical_alignment="center")
 
-col1, col2 = st.columns([1, 5], vertical_alignment="center")
 with col1:
-    st.image(LOGO_PATH, width=140)
+    st.image(LOGO_PATH, width=170)
+
 with col2:
-    st.markdown(f"<h1>{APP_NAME}</h1>", unsafe_allow_html=True)
-    st.markdown(f"<p class='gold'>{TAGLINE}</p>", unsafe_allow_html=True)
     st.markdown(
-        "<span class='badge'>Ugarit-inspired identity</span>"
-        "<span class='badge'>RAG + Local LLM (Ollama)</span>"
-        "<span class='badge'>GitHub Public</span>",
+        """
+        <div style='line-height:1.1;'>
+            <span style='font-size:42px; font-weight:800; letter-spacing:1px;'>
+                SIRA <span style='color:#D4AF37;'>CV</span>
+            </span>
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
+    st.markdown(
+        """
+        <div style='margin-top:8px; font-size:18px; color:#D4AF37; font-weight:600;'>
+            Automatic Resume Screening using LLM
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 st.divider()
 
 tabs = st.tabs(["Upload", "Run", "Results", "System Check"])
