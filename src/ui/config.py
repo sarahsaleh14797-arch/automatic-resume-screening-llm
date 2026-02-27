@@ -1,5 +1,5 @@
 APP_NAME = "SIRA CV"
-TAGLINE = "Intelligent Resume Screening & Ranking System"
+TAGLINE = "Automatic Resume Screening using LLM"
 LOGO_PATH = "assets/logo.png"
 
 # Ollama settings
