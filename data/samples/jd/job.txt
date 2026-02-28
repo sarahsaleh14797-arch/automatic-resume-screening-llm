@@ -1,0 +1,19 @@
+Position: Junior Data Scientist
+We are seeking a motivated Junior Data Scientist to join our analytics team. The ideal candidate should have strong programming skills and experience working with structured datasets.
+Required Skills:
+•	Proficiency in Python
+•	Experience with SQL databases
+•	Knowledge of Machine Learning algorithms
+•	Experience using Pandas and NumPy
+•	Understanding of data preprocessing and feature engineering
+Preferred Qualifications:
+•	Experience with Scikit-learn
+•	Knowledge of regression models
+•	Familiarity with Git version control
+•	Ability to build data-driven solutions
+Responsibilities:
+•	Analyze structured datasets
+•	Develop machine learning models
+•	Perform data cleaning and preprocessing
+•	Collaborate with cross-functional teams
+
