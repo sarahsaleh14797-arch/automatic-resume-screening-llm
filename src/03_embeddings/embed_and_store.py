@@ -1,24 +1,63 @@
-import hashlib
-import os
-from pathlib import Path
+from __future__ import annotations
 
-os.environ.setdefault("ANONYMIZED_TELEMETRY", "FALSE")
-os.environ.setdefault("CHROMA_TELEMETRY", "FALSE")
+import os
+import sys
+import types
+import hashlib
+import re
+from pathlib import Path
+import logging
+
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+os.environ["POSTHOG_DISABLED"] = "1"
+
+logging.getLogger("chromadb").setLevel(logging.CRITICAL)
+logging.getLogger("posthog").setLevel(logging.CRITICAL)
+
+dummy = types.ModuleType("posthog")
+dummy.capture = lambda *args, **kwargs: None
+dummy.identify = lambda *args, **kwargs: None
+dummy.flush = lambda *args, **kwargs: None
+sys.modules["posthog"] = dummy
 
 import chromadb
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+import numpy as np
 
 
 CHUNKS_DIR = Path("data/outputs/chunks")
 PERSIST_DIR = "data/vectorstore"
 COLLECTION_NAME = "resume_chunks"
-EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
+EMBED_DIM = 384
+
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+", re.UNICODE)
+
+
+def tokenize(text: str) -> list[str]:
+    return _TOKEN_RE.findall(text.lower())
+
+
+def hash_embed(text: str, dim: int = EMBED_DIM) -> list[float]:
+    tokens = tokenize(text)
+    v = np.zeros(dim, dtype=np.float32)
+
+    for tok in tokens:
+        h = hashlib.md5(tok.encode()).digest()
+        idx = int.from_bytes(h[:4], "little") % dim
+        sign = 1.0 if (h[4] % 2 == 0) else -1.0
+        v[idx] += sign
+
+    norm = float(np.linalg.norm(v))
+    if norm > 0:
+        v /= norm
+
+    return v.tolist()
 
 
 def parse_chunks(file_text: str) -> list[str]:
     parts = file_text.split("--- CHUNK ")
-    out: list[str] = []
+    out = []
     for part in parts:
         part = part.strip()
         if not part:
@@ -31,38 +70,33 @@ def parse_chunks(file_text: str) -> list[str]:
 
 def stable_id(source: str, chunk: str) -> str:
     h = hashlib.sha256()
-    h.update(source.encode("utf-8"))
+    h.update(source.encode())
     h.update(b"||")
-    h.update(chunk.encode("utf-8", errors="ignore"))
+    h.update(chunk.encode())
     return h.hexdigest()
 
 
 def main() -> None:
-    if not CHUNKS_DIR.exists():
-        raise FileNotFoundError(f"Chunks directory not found: {CHUNKS_DIR}")
-
-    embedder = SentenceTransformer(EMBED_MODEL_NAME)
-
     client = chromadb.Client(
         Settings(
             persist_directory=PERSIST_DIR,
             is_persistent=True,
+            anonymized_telemetry=False,
         )
     )
+
     collection = client.get_or_create_collection(COLLECTION_NAME)
 
     total = 0
+
     for file in CHUNKS_DIR.glob("*_chunks.txt"):
-        content = file.read_text(encoding="utf-8", errors="ignore")
+        content = file.read_text(encoding="utf-8")
         chunks = parse_chunks(content)
-        if not chunks:
-            print(f"Skipped (no chunks): {file.name}")
-            continue
 
         source = file.stem
         ids = [stable_id(source, ch) for ch in chunks]
-        embeddings = embedder.encode(chunks).tolist()
-        metadatas = [{"source": source, "file": file.name} for _ in chunks]
+        embeddings = [hash_embed(ch) for ch in chunks]
+        metadatas = [{"source": source} for _ in chunks]
 
         collection.upsert(
             ids=ids,
@@ -72,15 +106,9 @@ def main() -> None:
         )
 
         total += len(chunks)
-        print(f"Embedded+Stored: {file.name} -> {len(chunks)} chunks")
 
-    try:
-        client.persist()
-    except Exception:
-        pass
-
-    print(f"Done. Total chunks upserted: {total}")
-    print(f"Collection '{COLLECTION_NAME}' count: {collection.count()}")
+    print("Total chunks:", total)
+    print("Collection size:", collection.count())
 
 
 if __name__ == "__main__":
