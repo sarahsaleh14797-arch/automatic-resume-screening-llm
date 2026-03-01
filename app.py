@@ -1,61 +1,135 @@
-import streamlit as st
 import requests
+import streamlit as st
 
-from src.ui.theme import apply_theme
-from src.ui.config import APP_NAME, TAGLINE, LOGO_PATH, OLLAMA_BASE_URL, OLLAMA_MODEL
 from src.llm.llm_client import generate_response
+from src.ui.config import (
+    APP_NAME,
+    LOGO_PATH,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    TAGLINE,
+)
+from src.ui.theme import apply_theme
+
+
 st.set_page_config(page_title=APP_NAME, layout="wide")
 apply_theme()
-col1, col2 = st.columns([1.5, 5], vertical_alignment="center")
 
-with col1:
-    st.image(LOGO_PATH, width=170)
+HEADER_HTML = f"""
+<div class="sira-header">
+  <div class="sira-left">
+    <img class="sira-logo" src="app/static/logo" />
+  </div>
+  <div class="sira-right">
+    <div class="sira-title">{APP_NAME}</div>
+    <div class="sira-tagline">{TAGLINE}</div>
+    <div class="sira-subline">Local LLM via Ollama • RAG Pipeline • Ranking + Explainability</div>
+  </div>
+</div>
+"""
 
-with col2:
+def _inject_logo_as_static_route():
+    import base64
+    from pathlib import Path
+
+    p = Path(LOGO_PATH)
+    if not p.exists():
+        return None
+
+    data = p.read_bytes()
+    b64 = base64.b64encode(data).decode("utf-8")
+    ext = p.suffix.lower().replace(".", "")
+    mime = "png" if ext == "png" else "svg+xml" if ext == "svg" else "png"
+    return f"data:image/{mime};base64,{b64}"
+
+
+logo_data_url = _inject_logo_as_static_route()
+
+if logo_data_url is None:
+    st.error(f"Logo not found at: {LOGO_PATH}")
+else:
     st.markdown(
-        """
-        <div style='line-height:1.1;'>
-            <span style='font-size:42px; font-weight:800; letter-spacing:1px;'>
-                SIRA <span style='color:#D4AF37;'>CV</span>
-            </span>
+        f"""
+        <style>
+          .sira-header {{
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 22px 8px 10px 8px;
+            margin-top: 6px;
+          }}
+          .sira-logo {{
+            width: 220px;
+            height: auto;
+            display: block;
+          }}
+          .sira-title {{
+            font-size: 42px;
+            line-height: 1.05;
+            font-weight: 800;
+            color: var(--sira-gold);
+            margin: 0;
+            padding: 0;
+          }}
+          .sira-tagline {{
+            font-size: 18px;
+            line-height: 1.35;
+            font-weight: 600;
+            color: var(--sira-gold);
+            margin-top: 6px;
+          }}
+          .sira-subline {{
+            font-size: 15px;
+            line-height: 1.35;
+            font-weight: 500;
+            color: #ffffff;
+            margin-top: 6px;
+            opacity: 0.95;
+          }}
+          @media (max-width: 900px) {{
+            .sira-header {{ flex-direction: column; align-items: flex-start; }}
+            .sira-logo {{ width: 190px; }}
+            .sira-title {{ font-size: 34px; }}
+          }}
+        </style>
+        <div class="sira-header">
+          <div class="sira-left">
+            <img class="sira-logo" src="{logo_data_url}" />
+          </div>
+          <div class="sira-right">
+            <div class="sira-title">{APP_NAME}</div>
+            <div class="sira-tagline">{TAGLINE}</div>
+            <div class="sira-subline">Local LLM via Ollama • RAG Pipeline • Ranking + Explainability</div>
+          </div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
-    st.markdown(
-        """
-        <div style='margin-top:8px; font-size:18px; color:#D4AF37; font-weight:600;'>
-            Automatic Resume Screening using LLM
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
 st.divider()
 
 tabs = st.tabs(["Upload", "Run", "Results", "System Check"])
 
 with tabs[0]:
-    st.subheader("Upload CVs + Job Description")
+    st.subheader("Upload CVs and Job Description")
     st.file_uploader("Upload CV files (PDF/DOCX)", type=["pdf", "docx"], accept_multiple_files=True)
     st.text_area("Paste Job Description", height=220)
-    st.info("Next steps: Extraction → Chunking → Embeddings → Vector DB → Retrieval → Ollama Scoring → Ranking → Report")
 
 with tabs[1]:
     st.subheader("Run Screening")
-    st.warning("Pipeline will be implemented step-by-step to match the approved plan 100%.")
+    st.info("Run: Extract → Chunk → Embed/Store → Retrieve → Rank → Explain")
 
 with tabs[2]:
-    st.subheader("Results + Explainability")
-    st.warning("Ranking + evidence + explanations will appear here.")
+    st.subheader("Results and Explainability")
+    st.info("Ranking outputs will appear under data/outputs/ranking")
 
 with tabs[3]:
-    st.subheader("System Check (Doctor/Committee)")
-
+    st.subheader("System Check")
     ollama_ok = False
     model_ok = False
+
     try:
-        r = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3)
+        r = requests.get(f"{OLLAMA_BASE_URL.rstrip('/')}/api/tags", timeout=3)
         if r.status_code == 200:
             ollama_ok = True
             data = r.json()
@@ -65,24 +139,23 @@ with tabs[3]:
         pass
 
     st.write("### Runtime Status")
-    st.write(f"- Ollama service: {'✅ OK' if ollama_ok else '❌ Not reachable'}")
-    st.write(f"- Required model ({OLLAMA_MODEL}): {'✅ Available' if model_ok else '❌ Missing'}")
+    st.write(f"- Ollama service: {'OK' if ollama_ok else 'Not reachable'}")
+    st.write(f"- Required model ({OLLAMA_MODEL}): {'Available' if model_ok else 'Missing'}")
 
     if not ollama_ok:
         st.error("Ollama is not running. Start Ollama and refresh this page.")
     elif not model_ok:
-        st.warning(f"Model not found. Run once in terminal: `ollama pull {OLLAMA_MODEL}`")
+        st.warning(f"Model not found. Run in terminal: ollama pull {OLLAMA_MODEL}")
     else:
-        st.success("System prerequisites look good ✅")
-st.markdown("### 🔬 Test Local LLM")
+        st.success("System prerequisites look good.")
 
-test_prompt = st.text_area("Enter a test prompt:")
+    st.markdown("### Test Local LLM")
+    test_prompt = st.text_area("Enter a test prompt:", height=120)
 
-if st.button("Run LLM Test"):
-    if test_prompt.strip() == "":
-        st.warning("Please enter a prompt.")
-    else:
-        with st.spinner("Generating response..."):
-            result = generate_response(test_prompt)
-        st.success("Response:")
-        st.write(result)
+    if st.button("Run LLM Test"):
+        if test_prompt.strip() == "":
+            st.warning("Please enter a prompt.")
+        else:
+            with st.spinner("Generating response..."):
+                result = generate_response(test_prompt)
+            st.write(result)

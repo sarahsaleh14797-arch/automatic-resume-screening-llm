@@ -1,18 +1,19 @@
 from pathlib import Path
+
 import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
-# عدّلي هذا المسار حسب مكان ملف الجوب عندك
-JD_FILE = Path("data/samples/jd/job.txt")
 
+JD_FILE = Path("data/samples/jd/job.txt")
 TOP_K = 5
+
 PERSIST_DIR = "data/vectorstore"
 COLLECTION_NAME = "resume_chunks"
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
 
 
-def main():
+def main() -> None:
     if not JD_FILE.exists():
         raise FileNotFoundError(f"Job description not found: {JD_FILE}")
 
@@ -36,10 +37,10 @@ def main():
     metas = res["metadatas"][0]
     dists = res["distances"][0]
 
-    print("\n=== TOP MATCHED CHUNKS ===")
+    print("TOP MATCHED CHUNKS")
     for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists), start=1):
         print(f"\n#{i} | source={meta.get('source')} | distance={dist:.4f}")
-        print(doc[:400])
+        print(doc[:500])
 
 
 if __name__ == "__main__":

@@ -1,32 +1,65 @@
 import streamlit as st
 
-def apply_theme():
+
+def apply_theme() -> None:
     st.markdown(
         """
         <style>
-            .stApp { background: #0F1C2E; color: #F2F2F2; }
-            h1, h2, h3, h4, h5, h6, p, span, div { color: #F2F2F2; }
-            .gold { color: #C7A76C; font-weight: 700; }
-            .badge {
-                display: inline-block;
-                padding: 6px 10px;
-                border-radius: 999px;
-                border: 1px solid rgba(255,255,255,0.12);
-                background: rgba(255,255,255,0.04);
-                margin-right: 8px;
-            }
-            .stButton>button {
-                background-color: #1F4E79;
-                color: white;
-                border-radius: 10px;
-                border: 1px solid rgba(255,255,255,0.10);
-                padding: 8px 14px;
-            }
-            .stButton>button:hover {
-                background-color: #C7A76C;
-                color: #0B1220;
-            }
+          :root{
+            --sira-bg: #0b1220;
+            --sira-card: #111a2e;
+            --sira-border: rgba(255,255,255,0.10);
+            --sira-text: #e8eefc;
+            --sira-muted: rgba(232,238,252,0.75);
+            --sira-gold: #C9A227;
+          }
+
+          html, body, [class*="css"] {
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Helvetica Neue", sans-serif;
+          }
+
+          .stApp {
+            background: var(--sira-bg);
+            color: var(--sira-text);
+          }
+
+          .block-container {
+            padding-top: 1.2rem;
+            padding-bottom: 2.5rem;
+          }
+
+          h1, h2, h3, h4 {
+            color: var(--sira-text);
+            margin-top: 0.2rem;
+          }
+
+          .stTextArea textarea, .stTextInput input, .stFileUploader, .stSelectbox, .stMultiSelect {
+            background: var(--sira-card) !important;
+            border: 1px solid var(--sira-border) !important;
+            color: var(--sira-text) !important;
+          }
+
+          .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+          }
+
+          .stTabs [data-baseweb="tab"] {
+            background: transparent;
+            border: 1px solid var(--sira-border);
+            color: var(--sira-text);
+            border-radius: 12px;
+            padding: 10px 14px;
+          }
+
+          .stTabs [aria-selected="true"] {
+            background: var(--sira-card);
+            border-color: rgba(201,162,39,0.55);
+          }
+
+          .stDivider {
+            border-color: var(--sira-border);
+          }
         </style>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
