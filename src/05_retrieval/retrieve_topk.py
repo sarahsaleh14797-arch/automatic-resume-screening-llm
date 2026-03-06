@@ -1,46 +1,89 @@
+from __future__ import annotations
+
+import os
+import sys
+import types
+import hashlib
+import re
 from pathlib import Path
+import logging
+
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+os.environ["POSTHOG_DISABLED"] = "1"
+
+logging.getLogger("chromadb").setLevel(logging.CRITICAL)
+logging.getLogger("posthog").setLevel(logging.CRITICAL)
+
+dummy = types.ModuleType("posthog")
+dummy.capture = lambda *args, **kwargs: None
+dummy.identify = lambda *args, **kwargs: None
+dummy.flush = lambda *args, **kwargs: None
+sys.modules["posthog"] = dummy
 
 import chromadb
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+import numpy as np
 
 
 JD_FILE = Path("data/samples/jd/job.txt")
-TOP_K = 5
-
 PERSIST_DIR = "data/vectorstore"
 COLLECTION_NAME = "resume_chunks"
-EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
+TOP_K = 5
+EMBED_DIM = 384
+
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+", re.UNICODE)
+
+
+def tokenize(text: str) -> list[str]:
+    return _TOKEN_RE.findall(text.lower())
+
+
+def hash_embed(text: str, dim: int = EMBED_DIM) -> list[float]:
+    tokens = tokenize(text)
+    v = np.zeros(dim, dtype=np.float32)
+
+    for tok in tokens:
+        h = hashlib.md5(tok.encode()).digest()
+        idx = int.from_bytes(h[:4], "little") % dim
+        sign = 1.0 if (h[4] % 2 == 0) else -1.0
+        v[idx] += sign
+
+    norm = float(np.linalg.norm(v))
+    if norm > 0:
+        v /= norm
+
+    return v.tolist()
 
 
 def main() -> None:
-    if not JD_FILE.exists():
-        raise FileNotFoundError(f"Job description not found: {JD_FILE}")
+    jd_text = JD_FILE.read_text(encoding="utf-8").strip()
+    q_emb = hash_embed(jd_text)
 
-    jd_text = JD_FILE.read_text(encoding="utf-8", errors="ignore").strip()
-    if not jd_text:
-        raise ValueError("Job description file is empty.")
+    client = chromadb.Client(
+        Settings(
+            persist_directory=PERSIST_DIR,
+            is_persistent=True,
+            anonymized_telemetry=False,
+        )
+    )
 
-    model = SentenceTransformer(EMBED_MODEL_NAME)
-    q_emb = model.encode(jd_text).tolist()
+    collection = client.get_collection(COLLECTION_NAME)
+    effective_k = min(TOP_K, collection.count())
 
-    client = chromadb.Client(Settings(persist_directory=PERSIST_DIR, is_persistent=True))
-    col = client.get_collection(COLLECTION_NAME)
-
-    res = col.query(
+    results = collection.query(
         query_embeddings=[q_emb],
-        n_results=TOP_K,
+        n_results=effective_k,
         include=["documents", "metadatas", "distances"],
     )
 
-    docs = res["documents"][0]
-    metas = res["metadatas"][0]
-    dists = res["distances"][0]
+    docs = results["documents"][0]
+    metas = results["metadatas"][0]
+    dists = results["distances"][0]
 
-    print("TOP MATCHED CHUNKS")
     for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists), start=1):
-        print(f"\n#{i} | source={meta.get('source')} | distance={dist:.4f}")
-        print(doc[:500])
+        print(f"{i}. {meta['source']} | {dist:.4f}")
+        print(doc[:400])
 
 
 if __name__ == "__main__":

@@ -1,49 +1,65 @@
-import re
 from pathlib import Path
+import re
+
+IN_DIR = Path("data/outputs/extracted_text")
+OUT_DIR = Path("data/outputs/chunks")
+
+CHUNK_SIZE = 1200
+OVERLAP = 150
 
 
-INPUT_DIR = Path("data/outputs/extracted_text")
-OUTPUT_DIR = Path("data/outputs/chunks")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-CHUNK_SIZE = 800
-CHUNK_OVERLAP = 120
+def safe_console(text: str) -> str:
+    return str(text).encode("ascii", "backslashreplace").decode("ascii")
 
 
-def clean_text(text: str) -> str:
-    text = text.replace("\u00a0", " ")
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+def normalize_text(t: str) -> str:
+    t = t.replace("\r\n", "\n").replace("\r", "\n")
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
 
 
-def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
-    chunks: list[str] = []
+def chunk_text(text: str):
+    text = normalize_text(text)
+    if not text:
+        return []
+
+    chunks = []
     start = 0
     n = len(text)
 
     while start < n:
-        end = min(start + chunk_size, n)
-        chunks.append(text[start:end])
-        start = max(end - overlap, 0)
-        if end == n:
+        end = min(start + CHUNK_SIZE, n)
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= n:
             break
+        start = max(0, end - OVERLAP)
 
     return chunks
 
 
-def process_all() -> None:
-    for file in INPUT_DIR.glob("*.txt"):
-        text = file.read_text(encoding="utf-8", errors="ignore")
-        text = clean_text(text)
+def process_all():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    files = sorted(
+        [
+            p
+            for p in IN_DIR.glob("*.txt")
+            if p.name != "_failed.txt" and not p.name.startswith("_")
+        ],
+        key=lambda p: p.name.lower(),
+    )
+
+    for file in files:
+        text = file.read_text(encoding="utf-8", errors="replace")
         chunks = chunk_text(text)
 
-        out = OUTPUT_DIR / f"{file.stem}_chunks.txt"
-        with out.open("w", encoding="utf-8") as f:
-            for i, ch in enumerate(chunks, start=1):
-                f.write(f"--- CHUNK {i} ---\n{ch}\n\n")
+        out_file = OUT_DIR / f"{file.stem}_chunks.txt"
+        out_file.write_text("\n\n---\n\n".join(chunks), encoding="utf-8")
 
-        print(f"Chunked: {file.name} -> {len(chunks)} chunks")
+        print(f"Chunked: {safe_console(file.name)} -> {len(chunks)} chunks")
 
 
 if __name__ == "__main__":

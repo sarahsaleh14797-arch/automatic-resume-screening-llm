@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import sys
 import types
+import logging
+from pathlib import Path
 import hashlib
 import re
-from pathlib import Path
-import logging
+import unicodedata
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 os.environ["CHROMA_TELEMETRY"] = "False"
@@ -29,13 +30,35 @@ import numpy as np
 CHUNKS_DIR = Path("data/outputs/chunks")
 PERSIST_DIR = "data/vectorstore"
 COLLECTION_NAME = "resume_chunks"
-EMBED_DIM = 384
 
-_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+", re.UNICODE)
+EMBED_DIM = 384
+_SEPARATOR_RE = re.compile(r"\n\s*---\s*\n", re.MULTILINE)
+
+_AR_DIACRITICS_RE = re.compile(r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]")
+_TOKEN_RE = re.compile(r"[\w\u0600-\u06FF]+", re.UNICODE)
+
+_AR_MAP = str.maketrans({
+    "أ": "ا",
+    "إ": "ا",
+    "آ": "ا",
+    "ٱ": "ا",
+    "ى": "ي",
+    "ؤ": "و",
+    "ئ": "ي",
+    "ـ": "",
+})
+
+
+def normalize_text(text: str) -> str:
+    t = unicodedata.normalize("NFKC", text or "")
+    t = t.translate(_AR_MAP)
+    t = _AR_DIACRITICS_RE.sub("", t)
+    t = t.lower()
+    return t
 
 
 def tokenize(text: str) -> list[str]:
-    return _TOKEN_RE.findall(text.lower())
+    return _TOKEN_RE.findall(normalize_text(text))
 
 
 def hash_embed(text: str, dim: int = EMBED_DIM) -> list[float]:
@@ -43,7 +66,7 @@ def hash_embed(text: str, dim: int = EMBED_DIM) -> list[float]:
     v = np.zeros(dim, dtype=np.float32)
 
     for tok in tokens:
-        h = hashlib.md5(tok.encode()).digest()
+        h = hashlib.md5(tok.encode("utf-8", errors="ignore")).digest()
         idx = int.from_bytes(h[:4], "little") % dim
         sign = 1.0 if (h[4] % 2 == 0) else -1.0
         v[idx] += sign
@@ -55,25 +78,12 @@ def hash_embed(text: str, dim: int = EMBED_DIM) -> list[float]:
     return v.tolist()
 
 
-def parse_chunks(file_text: str) -> list[str]:
-    parts = file_text.split("--- CHUNK ")
-    out = []
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        content = part.split("\n", 1)[-1].strip()
-        if content:
-            out.append(content)
-    return out
-
-
-def stable_id(source: str, chunk: str) -> str:
-    h = hashlib.sha256()
-    h.update(source.encode())
-    h.update(b"||")
-    h.update(chunk.encode())
-    return h.hexdigest()
+def split_chunks(text: str) -> list[str]:
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    parts = _SEPARATOR_RE.split(raw)
+    return [p.strip() for p in parts if p.strip()]
 
 
 def main() -> None:
@@ -85,30 +95,46 @@ def main() -> None:
         )
     )
 
-    collection = client.get_or_create_collection(COLLECTION_NAME)
+    try:
+        collection = client.get_collection(COLLECTION_NAME)
+    except Exception:
+        collection = client.create_collection(COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
 
+    ids, docs, embs, metas = [], [], [], []
     total = 0
 
-    for file in CHUNKS_DIR.glob("*_chunks.txt"):
-        content = file.read_text(encoding="utf-8")
-        chunks = parse_chunks(content)
+    files = sorted([p for p in CHUNKS_DIR.glob("*_chunks.txt") if p.is_file()], key=lambda p: p.name.lower())
 
-        source = file.stem
-        ids = [stable_id(source, ch) for ch in chunks]
-        embeddings = [hash_embed(ch) for ch in chunks]
-        metadatas = [{"source": source} for _ in chunks]
+    for f in files:
+        source = f.stem
+        text = f.read_text(encoding="utf-8", errors="replace")
+        chunks = split_chunks(text)
 
-        collection.upsert(
-            ids=ids,
-            documents=chunks,
-            embeddings=embeddings,
-            metadatas=metadatas,
-        )
+        for i, ch in enumerate(chunks):
+            doc_id = f"{source}::{i}"
+            ids.append(doc_id)
+            docs.append(ch)
+            embs.append(hash_embed(ch))
+            metas.append({"source": source, "chunk_index": i})
+            total += 1
 
-        total += len(chunks)
+            if len(ids) >= 256:
+                collection.add(ids=ids, documents=docs, embeddings=embs, metadatas=metas)
+                ids, docs, embs, metas = [], [], [], []
 
-    print("Total chunks:", total)
-    print("Collection size:", collection.count())
+    if ids:
+        collection.add(ids=ids, documents=docs, embeddings=embs, metadatas=metas)
+
+    try:
+        client.persist()
+    except Exception:
+        pass
+
+    print(f"Total chunks: {total}")
+    try:
+        print(f"Collection size: {collection.count()}")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
