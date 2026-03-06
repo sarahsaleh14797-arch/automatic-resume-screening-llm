@@ -211,3 +211,14 @@ data/vectorstore/
 .streamlit/
 logs/
 *.log
+
+
+data/samples/cvs/
+data/outputs/
+data/vectorstore/
+data/samples/jd/job.txt
+data/samples/jd/history/
+.venv/
+__pycache__/
+*.pyc
+.env
